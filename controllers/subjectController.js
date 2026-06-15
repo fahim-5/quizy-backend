@@ -7,10 +7,10 @@ import AppError from "../utils/appError.js";
 const createSubject = async (req, res, next) => {
   try {
     const { name, code, enrollKey } = req.body;
-    if (!name || !code || !enrollKey)
+    if (!name || !code)
       return res
         .status(400)
-        .json({ success: false, message: "name, code and enrollKey required" });
+        .json({ success: false, message: "name and code required" });
 
     // ensure code uniqueness
     const exists = await Subject.findOne({ code: String(code).trim() });
@@ -22,7 +22,7 @@ const createSubject = async (req, res, next) => {
     const payload = {
       name: String(name).trim(),
       code: String(code).trim(),
-      enrollKey: String(enrollKey).trim(),
+      enrollKey: enrollKey ? String(enrollKey).trim() : undefined,
       createdBy: req.user ? req.user._id : undefined,
     };
 
@@ -152,13 +152,16 @@ const enrollSubject = async (req, res, next) => {
       return res.json({ success: true, message: "Already enrolled" });
     }
 
-    if (
-      !enrollKey ||
-      String(enrollKey).trim() !== String(subject.enrollKey).trim()
-    ) {
-      return res
-        .status(400)
-        .json({ success: false, message: "Invalid enroll key" });
+    // If course has no enrollKey, allow enrollment without a key
+    if (subject.enrollKey && String(subject.enrollKey).trim() !== "") {
+      if (
+        !enrollKey ||
+        String(enrollKey).trim() !== String(subject.enrollKey).trim()
+      ) {
+        return res
+          .status(400)
+          .json({ success: false, message: "Invalid enroll key" });
+      }
     }
 
     subject.enrolledUsers = subject.enrolledUsers || [];

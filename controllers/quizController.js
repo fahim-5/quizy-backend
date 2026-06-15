@@ -99,18 +99,24 @@ const createQuiz = async (req, res, next) => {
       payload.createdBy = req.user.id;
     }
 
-    // generate a 6-digit join code if not provided
+    // generate a join code if not provided
     if (!joinCode) {
-      const genCode = () =>
-        Math.floor(100000 + Math.random() * 900000).toString();
-      let code = genCode();
-      // avoid unlikely collisions by checking existing codes a few times
-      for (let i = 0; i < 5; i++) {
-        const exists = await Quiz.findOne({ joinCode: code });
-        if (!exists) break;
-        code = genCode();
+      // If subject is open (no enrollKey), use a reserved open code '1234' so
+      // students can attend without entering a code.
+      if (!subjDoc.enrollKey || String(subjDoc.enrollKey).trim() === "") {
+        payload.joinCode = "1234";
+      } else {
+        const genCode = () =>
+          Math.floor(100000 + Math.random() * 900000).toString();
+        let code = genCode();
+        // avoid unlikely collisions by checking existing codes a few times
+        for (let i = 0; i < 5; i++) {
+          const exists = await Quiz.findOne({ joinCode: code });
+          if (!exists) break;
+          code = genCode();
+        }
+        payload.joinCode = code;
       }
-      payload.joinCode = code;
     } else {
       payload.joinCode = String(joinCode).trim();
     }
@@ -184,7 +190,8 @@ const getQuizzes = async (req, res, next) => {
     }
     if (req.query.all === "true") {
       // By default exclude soft-deleted quizzes; allow including them via includeDeleted=true
-      const base = req.query.includeDeleted === "true" ? {} : { isActive: true };
+      const base =
+        req.query.includeDeleted === "true" ? {} : { isActive: true };
       if (search) {
         // search across title or subject code
         const regex = new RegExp(
@@ -216,12 +223,12 @@ const getQuizzes = async (req, res, next) => {
           .populate("createdBy", "name identifier");
         return res.json({ success: true, quizzes });
       }
-        if (req.query.mine === "true" && req.user) {
-          base.createdBy = req.user.id;
-        }
-        const quizzes = await Quiz.find(base)
-          .limit(500)
-          .populate("createdBy", "name identifier");
+      if (req.query.mine === "true" && req.user) {
+        base.createdBy = req.user.id;
+      }
+      const quizzes = await Quiz.find(base)
+        .limit(500)
+        .populate("createdBy", "name identifier");
       return res.json({ success: true, quizzes });
     }
 
@@ -325,6 +332,27 @@ const getQuiz = async (req, res, next) => {
       "name identifier",
     );
     if (!quiz) return res.status(404).json({ message: "Quiz not found" });
+    // If a joinCode is set on the quiz, require it for non-owners
+    const providedCode = (req.query.code || req.headers["x-join-code"] || "")
+      .toString()
+      .trim();
+    const isOwner =
+      req.user &&
+      req.user.id &&
+      String(quiz.createdBy?._id || quiz.createdBy) === String(req.user.id);
+    // Treat the reserved code '1234' as an open quiz (no code required)
+    if (
+      quiz.joinCode &&
+      String(quiz.joinCode).trim() !== "" &&
+      String(quiz.joinCode).trim() !== "1234" &&
+      !isOwner
+    ) {
+      if (!providedCode || providedCode !== String(quiz.joinCode).trim()) {
+        return res
+          .status(403)
+          .json({ success: false, message: "Join code required" });
+      }
+    }
     res.json({ success: true, quiz });
   } catch (err) {
     next(err);

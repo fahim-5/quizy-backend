@@ -17,6 +17,29 @@ const startResult = async (req, res, next) => {
       return res
         .status(404)
         .json({ success: false, message: "Quiz not found" });
+    // If a joinCode is set on the quiz, require it for non-owner/unauthenticated users
+    const providedCode = (
+      req.body.joinCode ||
+      req.query.code ||
+      req.headers["x-join-code"] ||
+      ""
+    )
+      .toString()
+      .trim();
+    const isOwner = req.user && req.user.role === "teacher";
+    // Treat reserved code '1234' as open (no code required)
+    if (
+      quizDoc.joinCode &&
+      String(quizDoc.joinCode).trim() !== "" &&
+      String(quizDoc.joinCode).trim() !== "1234" &&
+      !isOwner
+    ) {
+      if (!providedCode || providedCode !== String(quizDoc.joinCode).trim()) {
+        return res
+          .status(403)
+          .json({ success: false, message: "Join code required" });
+      }
+    }
     const now = new Date();
     if (quizDoc.startFrom && now < new Date(quizDoc.startFrom)) {
       // allow teachers to create drafts early
@@ -214,13 +237,11 @@ const submitResult = async (req, res, next) => {
             "text options correctIndex points",
           );
         } catch (e) {}
-        return res
-          .status(409)
-          .json({
-            success: false,
-            message: "Quiz already taken",
-            result: existingCompleted,
-          });
+        return res.status(409).json({
+          success: false,
+          message: "Quiz already taken",
+          result: existingCompleted,
+        });
       }
     }
     const createPayload = {

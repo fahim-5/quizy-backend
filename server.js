@@ -35,20 +35,36 @@ const colors = {
 // Security Middleware
 app.use(helmet());
 app.use(mongoSanitize());
-// CORS: allow development origins (localhost and 127.0.0.1) and echo the origin for credentialed requests
+// CORS: build an allowlist from env vars and sensible defaults.
+// Use `ALLOWED_ORIGINS` (comma-separated) or `CLIENT_URL` to add origins.
+// In development we remain permissive.
+const DEFAULT_NETLIFY = "https://quizy-online-quize-platfrom.netlify.app";
 const CLIENT_URL = process.env.CLIENT_URL || "http://localhost:5173";
-const allowedOrigins = new Set([
-  CLIENT_URL,
-  CLIENT_URL.replace("localhost", "127.0.0.1"),
-]);
+const allowedOrigins = new Set();
+
+// helper to add origin variants
+const addOrigin = (u) => {
+  if (!u) return;
+  allowedOrigins.add(u);
+  if (u.includes("localhost"))
+    allowedOrigins.add(u.replace("localhost", "127.0.0.1"));
+};
+
+addOrigin(CLIENT_URL);
+addOrigin(DEFAULT_NETLIFY);
+
+if (process.env.ALLOWED_ORIGINS) {
+  process.env.ALLOWED_ORIGINS.split(",").forEach((s) => addOrigin(s.trim()));
+}
+
+const isOriginAllowed = (origin) => {
+  // allow non-browser tools (no origin)
+  if (!origin) return true;
+  return allowedOrigins.has(origin);
+};
+
 const corsOptions = {
-  origin: (origin, cb) => {
-    // allow non-browser tools (no origin)
-    if (!origin) return cb(null, true);
-    if (allowedOrigins.has(origin)) return cb(null, true);
-    // don't throw an error here — return false so CORS middleware simply doesn't set headers
-    return cb(null, false);
-  },
+  origin: (origin, cb) => cb(null, isOriginAllowed(origin)),
   credentials: true,
   optionsSuccessStatus: 200,
 };
@@ -146,7 +162,10 @@ const startServer = async () => {
         await new Promise((resolve, reject) => {
           const httpServer = http.createServer(app);
           const io = new IOServer(httpServer, {
-            cors: { origin: CLIENT_URL, credentials: true },
+            cors: {
+              origin: (origin, cb) => cb(null, isOriginAllowed(origin)),
+              credentials: true,
+            },
           });
 
           // Save io for controllers
