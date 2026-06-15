@@ -12,6 +12,7 @@ import connectDB from "./config/database.js";
 
 // Import routes
 import routes from "./routes/index.js";
+import listEndpoints from "express-list-endpoints";
 import errorHandler from "./middleware/errorHandler.js";
 
 // Load environment variables
@@ -204,30 +205,13 @@ const startServer = async () => {
             console.log(
               `\n${colors.magenta}📋 Available Routes:${colors.reset}`,
             );
-            console.log(
-              `   ${colors.cyan}GET  /${colors.reset}          - Welcome message`,
-            );
-            console.log(
-              `   ${colors.cyan}GET  /health${colors.reset}     - Health check`,
-            );
-            console.log(
-              `   ${colors.green}POST /api/auth/register${colors.reset} - User registration`,
-            );
-            console.log(
-              `   ${colors.green}POST /api/auth/login${colors.reset}    - User login`,
-            );
-            console.log(
-              `   ${colors.blue}GET  /api/auth/me${colors.reset}       - Get current user (Protected)`,
-            );
-            console.log(
-              `   ${colors.blue}GET  /api/posts${colors.reset}         - Get all posts`,
-            );
-            console.log(
-              `   ${colors.blue}POST /api/posts${colors.reset}         - Create post (Protected)`,
-            );
-            console.log(
-              `   ${colors.yellow}GET  /api/users${colors.reset}         - Get all users (Teacher only)`,
-            );
+            const endpoints = listEndpoints(app);
+            endpoints.forEach((ep) => {
+              const methods = ep.methods.join(",");
+              console.log(
+                `   ${colors.cyan}${methods.padEnd(6)} ${colors.reset}${ep.path}`,
+              );
+            });
             console.log(
               `\n${colors.green}🎯 Use Ctrl+C to stop the server${colors.reset}\n`,
             );
