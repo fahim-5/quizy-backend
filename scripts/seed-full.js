@@ -5,8 +5,8 @@ import dotenv from "dotenv";
 dotenv.config();
 const MONGO =
   process.env.MONGODB_URI ||
-  process.env.MONGO_URI ||
-  "mongodb://127.0.0.1:27017/onlinequiz";
+  process.env.MONGO_URI ;
+  
 
 const UserSchema = new mongoose.Schema(
   {
@@ -60,6 +60,7 @@ const ResultSchema = new mongoose.Schema({
   takenAt: { type: Date, default: Date.now },
 });
 
+
 const User = mongoose.models.User || mongoose.model("User", UserSchema);
 const Quiz = mongoose.models.Quiz || mongoose.model("Quiz", QuizSchema);
 const Subject =
@@ -72,7 +73,7 @@ async function appendSample() {
   await mongoose.connect(MONGO);
   console.log("Connected to", MONGO);
 
-  // Create more students and teachers if they don't exist
+  
   const usersToEnsure = [
     {
       identifier: "student03",
