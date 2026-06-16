@@ -141,8 +141,11 @@ const getMonitor = async (req, res, next) => {
     if (!quiz) return res.status(404).json({ message: "Quiz not found" });
 
     const session = await MonitorSession.findOne({ quiz: quizId });
+
+    // populate user info for participants when available
     const participants = await LiveParticipant.find({ quiz: quizId })
       .sort({ joinedAt: 1 })
+      .populate("user", "name email")
       .lean();
 
     // Aggregate per-question stats
@@ -167,10 +170,12 @@ const getMonitor = async (req, res, next) => {
       }
     }
 
-    // Populate question info
+    // Populate question info (for stats) and compute total available points
     const questionIds = Object.keys(statsMap);
-    const questions = await Question.find({ _id: { $in: questionIds } }).lean();
-    const stats = questions.map((q) => {
+    const answeredQuestions = await Question.find({
+      _id: { $in: questionIds },
+    }).lean();
+    const stats = answeredQuestions.map((q) => {
       const s = statsMap[String(q._id)] || {
         total: 0,
         correct: 0,
@@ -190,16 +195,117 @@ const getMonitor = async (req, res, next) => {
       };
     });
 
+    // Compute total points for the quiz (all questions)
+    const allQuestions = await Question.find({ quiz: quizId }).lean();
+    const quizTotalPoints = (allQuestions || []).reduce(
+      (acc, q) => acc + (q.points || 0),
+      0,
+    );
+
+    // Compute per-participant total points and percent
+    const participantsWithScores = (participants || []).map((p) => {
+      const totalPoints = (p.answers || []).reduce(
+        (acc, a) => acc + (a.pointsAwarded || 0),
+        0,
+      );
+      const percent = quizTotalPoints
+        ? Math.round((totalPoints / quizTotalPoints) * 100)
+        : null;
+      return { ...p, totalPoints, percent };
+    });
+
+    // Top performers (top 5)
+    const topPerformers = (participantsWithScores || [])
+      .slice()
+      .sort((a, b) => (b.totalPoints || 0) - (a.totalPoints || 0))
+      .slice(0, 5)
+      .map((p) => ({
+        _id: p._id,
+        name: p.name || (p.user && p.user.name) || "Guest",
+        email: p.user && p.user.email ? p.user.email : undefined,
+        totalPoints: p.totalPoints || 0,
+        percent: p.percent,
+      }));
+
     res.json({
       success: true,
       quiz,
       session: session || null,
-      participants,
+      participants: participantsWithScores,
       stats,
+      quizTotalPoints,
+      topPerformers,
     });
   } catch (err) {
     next(err);
   }
 };
+// Export CSV of participants and scores
+const exportMonitorCsv = async (req, res, next) => {
+  try {
+    const quizId = req.params.id;
+    const quiz = await Quiz.findById(quizId);
+    if (!quiz) return res.status(404).json({ message: "Quiz not found" });
 
-export default { joinSession, submitAnswer, control, getMonitor };
+    const participants = await LiveParticipant.find({ quiz: quizId })
+      .sort({ joinedAt: 1 })
+      .populate("user", "name email")
+      .lean();
+
+    const allQuestions = await Question.find({ quiz: quizId }).lean();
+    const quizTotalPoints = (allQuestions || []).reduce(
+      (acc, q) => acc + (q.points || 0),
+      0,
+    );
+
+    // Build CSV rows
+    const rows = [];
+    rows.push([
+      "Participant",
+      "Email",
+      "TotalPoints",
+      "Percent",
+      "AnswersCount",
+      "JoinedAt",
+    ]);
+
+    for (const p of participants) {
+      const totalPoints = (p.answers || []).reduce(
+        (acc, a) => acc + (a.pointsAwarded || 0),
+        0,
+      );
+      const percent = quizTotalPoints
+        ? Math.round((totalPoints / quizTotalPoints) * 100)
+        : "";
+      rows.push([
+        p.name || (p.user && p.user.name) || "Guest",
+        (p.user && p.user.email) || "",
+        totalPoints,
+        percent,
+        (p.answers && p.answers.length) || 0,
+        p.joinedAt ? new Date(p.joinedAt).toISOString() : "",
+      ]);
+    }
+
+    const csv = rows
+      .map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(","))
+      .join("\n");
+
+    res.setHeader("Content-Type", "text/csv;charset=utf-8");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="${(quiz.title || "quiz").replace(/[^a-z0-9._-]/gi, "_")}-results.csv"`,
+    );
+    res.send(csv);
+  } catch (err) {
+    next(err);
+  }
+};
+
+export default {
+  joinSession,
+  submitAnswer,
+  control,
+  getMonitor,
+  exportMonitorCsv,
+};

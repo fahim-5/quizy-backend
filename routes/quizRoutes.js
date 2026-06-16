@@ -33,6 +33,12 @@ router.get(
   authorize("teacher"),
   monitorController.getMonitor,
 );
+router.get(
+  "/:id/monitor/export",
+  protect,
+  authorize("teacher"),
+  monitorController.exportMonitorCsv,
+);
 router.post("/:id/monitor/join", optionalAuth, monitorController.joinSession);
 router.post(
   "/:id/monitor/answer",
