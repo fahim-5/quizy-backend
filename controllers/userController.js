@@ -18,6 +18,24 @@ export const getUsers = async (req, res, next) => {
   }
 };
 
+// @desc    Public list of teachers (limited fields)
+// @route   GET /api/teachers
+// @access  Public
+export const getPublicTeachers = async (req, res, next) => {
+  try {
+    // return teachers with only public fields
+    const teachers = await User.find({ role: "teacher" }).select(
+      "name email institution _id identifier",
+    );
+
+    res
+      .status(200)
+      .json({ success: true, count: teachers.length, data: teachers });
+  } catch (error) {
+    next(error);
+  }
+};
+
 // @desc    Get single user
 // @route   GET /api/users/:id
 // @access  Private/Teacher
